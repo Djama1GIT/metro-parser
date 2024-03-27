@@ -12,9 +12,8 @@ This project is a parser of products from Metro store
 git clone https://github.com/Djama1GIT/metro-parser.git
 cd metro-parser
 ```
-3. Configure the environment variables in the .env-non-dev file.
 
-4. Start the project:
+3. Start the project:
 
 ```bash
 make build run
