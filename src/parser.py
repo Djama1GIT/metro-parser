@@ -7,7 +7,6 @@ from selenium.common import NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.remote.webelement import WebElement
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
 from webdriver_manager.firefox import GeckoDriverManager
@@ -18,6 +17,18 @@ from .utils import retry
 
 
 class MetroParser:
+    """
+    A class to parse product information from the Metro store.
+
+    Methods:
+        __init__(self, _env_file: str = '') -> None: Initializes the MetroParser with the specified environment file.
+        initialize_driver(self) -> WebDriver: Initializes and configures the web browser driver.
+        select_address_in_city(self, driver: WebDriver, city: str) -> None: Selects the first address in the city.
+        scrape_price(text: str) -> str: Static method to extract price information from a given text.
+        get_item_data(self, driver: WebDriver, link: str) -> dict: Retrieves item data for a given product link.
+        scroll_to_the_bottom(self, driver: WebDriver) -> None: Scrolls to the bottom of the page to load more items.
+        parse_chocolate_category(self, city: str) -> List[dict]: Parses the chocolate category for the specified city.
+    """
     HOST = "https://online.metro-cc.ru/"
     ADDRESS_BTN = (By.XPATH, "(//button[contains(@class, 'header-address__receive-button')])")
     SHOW_MORE = (By.XPATH, "(//button[contains(@class, 'subcategory-or-type__load-more')])")
@@ -34,7 +45,13 @@ class MetroParser:
     PRODUCT_ITEM_REGULAR_PRICE = (By.XPATH, "(//div[contains(@class, 'product-unit-prices__old-wrapper')])")
     PRODUCT_BRAND_NAME = (By.XPATH, "(//a[contains(@class, 'product-attributes__list-item')])[4]")
 
-    def __init__(self, _env_file=''):
+    def __init__(self, _env_file: str = '') -> None:
+        """
+        Initializes the MetroParser.
+
+        Args:
+            _env_file (str, optional): Path to the environment file. Defaults to ''.
+        """
         settings = Settings(_env_file=_env_file)
 
         if settings.WEBDRIVER == "CHROMIUM":
@@ -66,13 +83,25 @@ class MetroParser:
             self.options.add_argument("--disable-cache")
 
     def initialize_driver(self) -> WebDriver:
-        """Initializing and configuring the web browser driver."""
+        """
+        Initializes and configures the web browser driver.
+
+        Returns:
+            WebDriver: The configured web driver.
+        """
         logger.info("Initializing web driver")
         driver = self.web_driver(service=self.service, options=self.options)
         logger.info("Web driver initialized successfully")
         return driver
 
     def select_address_in_city(self, driver: WebDriver, city: str) -> None:
+        """
+        Selects the first address in the specified city.
+
+        Args:
+            driver (WebDriver): The web driver instance.
+            city (str): The city name.
+        """
         logger.info(f"Selecting address in city: {city}")
         driver.find_element(*self.ADDRESS_BTN).click()
         logger.info("Address button clicked")
@@ -92,12 +121,31 @@ class MetroParser:
         logger.info("Address selection completed")
 
     @staticmethod
-    def scrape_price(text):
+    def scrape_price(text: str) -> str:
+        """
+        Static method to extract price information from a given text.
+
+        Args:
+            text (str): The text containing the price information.
+
+        Returns:
+            str: The extracted price.
+        """
         return text.replace(" ", "").split("д")[0]
 
     @lru_cache(maxsize=None)
     @retry(tries=10, log=True)
     def get_item_data(self, driver: WebDriver, link: str) -> dict:
+        """
+        Retrieves item data for a given product link.
+
+        Args:
+            driver (WebDriver): The web driver instance.
+            link (str): The product link.
+
+        Returns:
+            dict: The item data.
+        """
         logger.info(f"Opening new window for link: {link}")
         driver.execute_script("window.open('');")
         driver.switch_to.window(driver.window_handles[1])
@@ -127,7 +175,13 @@ class MetroParser:
             driver.close()
             driver.switch_to.window(driver.window_handles[0])
 
-    def scroll_to_the_bottom(self, driver):
+    def scroll_to_the_bottom(self, driver: WebDriver) -> None:
+        """
+        Scrolls to the bottom of the page to load more items.
+
+        Args:
+            driver (WebDriver): The web driver instance.
+        """
         logger.info("Starting to scroll to the bottom of the page")
         while True:
             try:
@@ -140,6 +194,15 @@ class MetroParser:
 
     @retry(tries=10, log=True)
     def parse_chocolate_category(self, city: str) -> List[dict]:
+        """
+        Parses the chocolate category for the specified city.
+
+        Args:
+            city (str): The city name.
+
+        Returns:
+            List[dict]: A list of dictionaries containing product data.
+        """
         logger.info(f"Starting to parse chocolate category for city: {city}")
         with self.initialize_driver() as driver:
             logger.info("Navigating to chocolate category page")

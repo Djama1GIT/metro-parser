@@ -1,8 +1,8 @@
 # Metro Parser
 
-This project is a parser of products from Metro
+This project is a parser of products from Metro store
 
-## Installation and Setup
+## Installation and Setup <sup><sub>(tested on Linux)</sub></sup>
 
 1. Install Docker and Docker Compose if they are not already installed on your system.
 
