@@ -1,4 +1,5 @@
 import time
+from functools import wraps
 
 from .logger import logger
 
@@ -31,6 +32,7 @@ def retry(tries=-1, delay=0, exceptions=Exception, log=False):
     only if a ValueError is raised, and it will log each retry attempt.
     """
     def retry_decorator(func):
+        @wraps(func)
         def retry_wrapper(*args, **kwargs):
             nonlocal tries, delay, exceptions
             while tries:

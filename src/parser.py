@@ -1,4 +1,4 @@
-from functools import lru_cache
+from functools import lru_cache, wraps
 from time import sleep
 from typing import List
 
@@ -7,6 +7,7 @@ from selenium.common import NoSuchElementException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.remote.webelement import WebElement
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
 from webdriver_manager.firefox import GeckoDriverManager
@@ -14,6 +15,42 @@ from webdriver_manager.firefox import GeckoDriverManager
 from .config import Settings
 from .logger import logger
 from .utils import retry
+
+
+def open_new_window(func):
+    """
+    A decorator that opens a new browser window before
+    the decorated function is called and closes it after the function completes.
+
+    This decorator is useful for functions that need to perform
+    operations in a new window, such as navigating to a link,
+    extracting data, and then closing the window.
+    It ensures that the window management logic is encapsulated within the decorator,
+    making the decorated function cleaner and more focused on its specific task.
+
+    Args:
+        func (function): The function to be decorated. This function should accept at least two parameters:
+            - `self`: The instance of the class that the function belongs to.
+            - `driver`: An instance of Selenium WebDriver.
+            - `link`: The URL to navigate to in the new window.
+
+    Returns:
+        function: The decorated function.
+    """
+    @wraps(func)
+    def wrapper(self, driver: WebDriver, link: str, *args, **kwargs):
+        logger.info(f"Opening new window for link: {link}")
+        driver.execute_script("window.open('');")
+        driver.switch_to.window(driver.window_handles[1])
+
+        try:
+            return func(self, driver, link, *args, **kwargs)
+        finally:
+            logger.info("Closing the new window")
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
+
+    return wrapper
 
 
 class MetroParser:
@@ -105,18 +142,24 @@ class MetroParser:
         logger.info(f"Selecting address in city: {city}")
         driver.find_element(*self.ADDRESS_BTN).click()
         logger.info("Address button clicked")
+
         driver.find_element(*self.PICKUP_BTN).click()
         logger.info("Pickup button clicked")
+
         driver.find_element(*self.RESET_BTN).click()
         logger.info("Reset button clicked")
+
         driver.find_element(*self.CITY_INPUT).send_keys(city)
         logger.info(f"City input: {city}")
+
         sleep(2)
         driver.find_element(*self.CITY_ITEM).click()
         logger.info("City item clicked")
+
         sleep(1)
         driver.find_element(*self.SELECT_BTN).click()
         logger.info("Select button clicked")
+
         sleep(3)
         logger.info("Address selection completed")
 
@@ -135,7 +178,8 @@ class MetroParser:
 
     @lru_cache(maxsize=None)
     @retry(tries=10, log=True)
-    def get_item_data(self, driver: WebDriver, link: str) -> dict:
+    @open_new_window
+    def get_product_data(self, driver: WebDriver, link: str) -> dict:
         """
         Retrieves item data for a given product link.
 
@@ -146,10 +190,6 @@ class MetroParser:
         Returns:
             dict: The item data.
         """
-        logger.info(f"Opening new window for link: {link}")
-        driver.execute_script("window.open('');")
-        driver.switch_to.window(driver.window_handles[1])
-
         logger.info(f"Navigating to link: {link}")
         driver.get(link)
 
@@ -170,10 +210,37 @@ class MetroParser:
         except NoSuchElementException:
             logger.info("The product is out of stock")
             return {}
-        finally:
-            logger.info("Closing the new window")
-            driver.close()
-            driver.switch_to.window(driver.window_handles[0])
+
+    def get_products_data(
+            self, driver: WebDriver,
+            product_items: List[WebElement],
+            product_photo_items: List[WebElement]
+    ) -> List[dict]:
+        """
+        Retrieves product data for a list of product items and their corresponding photo items.
+
+        This method iterates over pairs of product items and their photo items, extracts the product link,
+        and checks if the product is not marked as "Раскупили" (sold out). If the product is available,
+        it retrieves the product data using the `get_product_data` method and appends it to the `products` list.
+
+        Args:
+            driver (WebDriver): The Selenium WebDriver instance used for browser automation.
+            product_items (List[WebElement]): A list of WebElement instances representing product items.
+            product_photo_items (List[WebElement]): A list of WebElement instances representing product photo items.
+                                                    It is only used to get a link to the product
+
+        Returns:
+            List[dict]: A list of dictionaries containing the product data for each available product.
+        """
+        products = []
+        for item, photo_item in zip(product_items, product_photo_items):
+            link = photo_item.get_attribute("href")
+            if "Раскупили" not in item.text:
+                data = self.get_product_data(driver, link)
+                if data:
+                    products.append(data)
+
+        return products
 
     def scroll_to_the_bottom(self, driver: WebDriver) -> None:
         """
@@ -209,23 +276,17 @@ class MetroParser:
             driver.get("https://online.metro-cc.ru/category/sladosti-chipsy-sneki/shokolad-batonchiki")
             driver.implicitly_wait(6)
 
-            logger.info(f"Selecting address in city: {city}")
+            logger.info(f"Selecting the first turned up address in city: {city}")
             self.select_address_in_city(driver, city)
 
             logger.info("Scrolling to the bottom of the page")
             self.scroll_to_the_bottom(driver)
 
-            logger.info("Finding product items")
-            product_items = driver.find_elements(*self.PRODUCT_ITEM)
-            product_photo_items = driver.find_elements(*self.PRODUCT_PHOTO_ITEM)
+            logger.info("Finding products")
+            products = driver.find_elements(*self.PRODUCT_ITEM)
+            product_photos = driver.find_elements(*self.PRODUCT_PHOTO_ITEM)
 
-            products = []
-            for item, photo_item in zip(product_items, product_photo_items):
-                link = photo_item.get_attribute("href")
-                if "Раскупили" not in item.text:
-                    data = self.get_item_data(driver, link)
-                    if data:
-                        products.append(data)
+            products_data = self.get_products_data(driver, products, product_photos)
 
-            logger.info(f"Parsed {len(products)} products")
-            return products
+            logger.info(f"Parsed {len(products_data)} products")
+            return products_data
